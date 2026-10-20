@@ -1,6 +1,6 @@
 [package]
 name = "hyper-panel-web"
-version = "1.0.0"
+version = "1.0.1"
 description = "Hyper Panel Admin Console"
 
 [dependencies]
@@ -15,4 +15,8 @@ module = "wasmer/static-web-server:webserver"
 runner = "wasi"
 
 [command.annotations.wasi]
-main-args = ["--root", "/public", "--port", "8080"]
+main-args = [
+  "--root", "/public",
+  "--port", "8080",
+  "--page-fallback", "/public/index.html"
+]
