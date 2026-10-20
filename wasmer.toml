@@ -1,7 +1,7 @@
 [package]
-name = "firexpanel-web"
+name = "hyper-panel-web"
 version = "1.0.0"
-description = "FirexPanel Admin Console"
+description = "Hyper Panel Admin Console"
 
 [dependencies]
 "wasmer/static-web-server" = "^1"
