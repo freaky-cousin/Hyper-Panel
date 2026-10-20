@@ -4,6 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>HYPER PANEL · Device & Account Management Console</title>
+<!-- Inline SVG Favicon eliminates /favicon.ico 404 warnings in Wasmer logs -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2306080d'/%3E%3Ccircle cx='32' cy='32' r='16' fill='%2300d2ff'/%3E%3C/svg%3E" />
 <style>
   :root {
     --bg-dark: #06080d;
@@ -60,4 +62,282 @@
 
   .nodes-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
   .node-item { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
-  .node-head { display: flex; justify-content: space-between; align-items: center
+  .node-head { display: flex; justify-content: space-between; align-items: center; }
+  .node-id { color: var(--accent); font-weight: 800; font-size: 0.78rem; }
+  .node-details { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; }
+  .token-bar { background: #070a10; padding: 6px 8px; border-radius: 6px; font-size: 0.72rem; color: #94a3b8; overflow-x: auto; white-space: nowrap; border: 1px solid #1a2438; }
+
+  .console-log {
+    background: #04060a; border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+    height: 260px; overflow-y: auto; font-size: 0.78rem; display: flex; flex-direction: column; gap: 6px;
+  }
+  .log-entry { border-bottom: 1px solid #0f1624; padding-bottom: 5px; line-height: 1.4; }
+  .log-time { color: var(--text-dim); margin-right: 6px; }
+  .log-badge { color: var(--accent); font-weight: 700; margin-right: 6px; }
+
+  footer { text-align: center; padding: 14px; font-size: 0.75rem; color: var(--text-dim); border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="pulse-dot"></span>
+    HYPER PANEL
+    <span style="font-weight:400;font-size:0.78rem;color:var(--text-dim);">Admin Console</span>
+  </div>
+  <span class="status-pill" id="edge-pill">● HYPER ENGINE ACTIVE</span>
+</header>
+
+<div class="wrapper">
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-label">Saved Accounts</div><div class="stat-num" id="stat-total">0</div></div>
+    <div class="stat-box"><div class="stat-label">Online Nodes</div><div class="stat-num" id="stat-online" style="color:var(--emerald);">0</div></div>
+    <div class="stat-box"><div class="stat-label">Commands Sent</div><div class="stat-num" id="stat-cmds">0</div></div>
+    <div class="stat-box"><div class="stat-label">Edge Latency</div><div class="stat-num" id="stat-ping" style="color:var(--accent);">14ms</div></div>
+  </div>
+
+  <div class="main-layout">
+    <div style="display:flex;flex-direction:column;gap:18px;">
+      <div class="panel-card">
+        <div class="panel-title"><span>+ Link Account / Device Node</span></div>
+        <input id="inp-label" placeholder="Node Label (e.g. Hyper Worker 01)" />
+        <input id="inp-user" placeholder="Account Username / Handle" />
+        <input id="inp-device" value="Android 14 · SM-S928B" placeholder="Device Profile" />
+        <input id="inp-ip" value="103.21.244.88" placeholder="Origin IP / Proxy" />
+        <button onclick="HyperPanel.addNode()">+ Save Account to Hyper Panel</button>
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-title"><span>Remote Task Dispatcher</span></div>
+        <select id="sel-node"></select>
+        <select id="sel-action">
+          <option value="START_VIEW_LOOP">Start Automated View Loop</option>
+          <option value="SYNC_HEARTBEAT">Sync Session & Heartbeat</option>
+          <option value="ROTATE_FINGERPRINT">Rotate Canvas/WebGL Fingerprint</option>
+          <option value="FLUSH_COOKIES">Clear WebView Storage & Cookies</option>
+        </select>
+        <input id="inp-payload" placeholder="Target Video URL or Payload" />
+        <button onclick="HyperPanel.executeCommand()">Dispatch Command</button>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px;">
+      <div class="panel-card">
+        <div class="panel-title">
+          <span>Saved Accounts</span>
+          <div style="display:flex;gap:6px;">
+            <button class="btn-outline" onclick="HyperPanel.exportConfig()">Export JSON</button>
+            <button class="btn-outline" onclick="HyperPanel.resetDemo()">Reset</button>
+          </div>
+        </div>
+        <div id="nodes-container" class="nodes-list"></div>
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-title">
+          <span>HYPER PANEL · Live Connection & Command Log</span>
+          <button class="btn-outline" onclick="HyperPanel.clearLogs()">Clear Log</button>
+        </div>
+        <div id="logs-container" class="console-log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>HYPER PANEL Admin Console · All connections are logged.</footer>
+
+<script>
+const STORAGE_KEY = "hyper_panel_edge_v2";
+
+const DEFAULT_DATA = {
+  commandsCount: 2,
+  nodes: [
+    {
+      id: "HP-801A",
+      label: "Primary Mobile Node",
+      username: "hyper_cluster_01",
+      device: "Android 14 · Mobile Browser",
+      ip: "103.21.244.19",
+      status: "ONLINE",
+      token: "hp_live_98a7f6d5e4c3b2a1"
+    },
+    {
+      id: "HP-309C",
+      label: "Cloud Headless Worker",
+      username: "codespace_runner_02",
+      device: "Linux x86_64 · Headless Chromium",
+      ip: "140.82.112.4",
+      status: "ONLINE",
+      token: "hp_live_11c2d3e4f5a6b7c8"
+    }
+  ],
+  logs: [
+    { time: new Date().toLocaleTimeString(), tag: "SYSTEM_BOOT", msg: "HYPER PANEL Wasmer Edge Console initialized." },
+    { time: new Date().toLocaleTimeString(), tag: "AUTH_GUARD", msg: "Hyper Panel encrypted local vault synchronized." }
+  ]
+};
+
+const HyperPanel = {
+  state: null,
+
+  init() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try { this.state = JSON.parse(raw); } catch (e) { this.state = JSON.parse(JSON.stringify(DEFAULT_DATA)); }
+    } else {
+      this.state = JSON.parse(JSON.stringify(DEFAULT_DATA));
+      this.save();
+    }
+    this.render();
+    setInterval(() => {
+      const ms = Math.floor(11 + Math.random() * 9);
+      const el = document.getElementById("stat-ping");
+      if (el) el.textContent = ms + "ms";
+    }, 3500);
+  },
+
+  save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+  },
+
+  log(tag, msg) {
+    this.state.logs.unshift({
+      time: new Date().toLocaleTimeString(),
+      tag,
+      msg
+    });
+    if (this.state.logs.length > 80) this.state.logs.length = 80;
+    this.save();
+    this.render();
+  },
+
+  randomHex(len) {
+    const arr = new Uint8Array(len);
+    crypto.getRandomValues(arr);
+    return Array.from(arr, b => b.toString(16).padStart(2, "0")).join("");
+  },
+
+  addNode() {
+    const label = document.getElementById("inp-label").value.trim();
+    const username = document.getElementById("inp-user").value.trim();
+    const device = document.getElementById("inp-device").value.trim() || "Android 14 · Mobile";
+    const ip = document.getElementById("inp-ip").value.trim() || "103.21.244.10";
+
+    if (!label || !username) {
+      alert("Enter both a Node Label and Username.");
+      return;
+    }
+
+    const id = "HP-" + this.randomHex(2).toUpperCase();
+    const token = "hp_live_" + this.randomHex(8);
+
+    this.state.nodes.unshift({ id, label, username, device, ip, status: "ONLINE", token });
+    document.getElementById("inp-label").value = "";
+    document.getElementById("inp-user").value = "";
+    this.log("NODE_LINKED", `Registered node [${id}] (${username} @ ${device}).`);
+  },
+
+  toggleStatus(id) {
+    const node = this.state.nodes.find(n => n.id === id);
+    if (!node) return;
+    node.status = node.status === "ONLINE" ? "PAUSED" : "ONLINE";
+    this.log("STATE_CHANGE", `Node [${id}] switched to ${node.status}.`);
+  },
+
+  deleteNode(id) {
+    this.state.nodes = this.state.nodes.filter(n => n.id !== id);
+    this.log("NODE_UNLINKED", `Removed account node [${id}] from Hyper Panel.`);
+  },
+
+  executeCommand() {
+    const nodeId = document.getElementById("sel-node").value;
+    const action = document.getElementById("sel-action").value;
+    const payload = document.getElementById("inp-payload").value.trim() || "default://stream";
+
+    if (!nodeId) {
+      alert("Link an account node first.");
+      return;
+    }
+
+    const node = this.state.nodes.find(n => n.id === nodeId);
+    this.state.commandsCount += 1;
+    document.getElementById("inp-payload").value = "";
+    this.log("CMD_DISPATCH", `Sent [${action}] -> ${nodeId} (${node ? node.username : ""}) | Target: ${payload}`);
+  },
+
+  clearLogs() {
+    this.state.logs = [];
+    this.log("LOG_PURGE", "Hyper Panel audit log cleared by operator.");
+  },
+
+  resetDemo() {
+    localStorage.removeItem(STORAGE_KEY);
+    this.init();
+  },
+
+  exportConfig() {
+    const blob = new Blob([JSON.stringify(this.state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "hyper_panel_backup.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  render() {
+    const nodes = this.state.nodes;
+    const onlineCount = nodes.filter(n => n.status === "ONLINE").length;
+
+    document.getElementById("stat-total").textContent = nodes.length;
+    document.getElementById("stat-online").textContent = onlineCount;
+    document.getElementById("stat-cmds").textContent = this.state.commandsCount;
+
+    const sel = document.getElementById("sel-node");
+    sel.innerHTML = nodes.length
+      ? nodes.map(n => `<option value="${n.id}">${n.id} — ${n.username}</option>`).join("")
+      : `<option value="">No accounts linked</option>`;
+
+    const container = document.getElementById("nodes-container");
+    if (!nodes.length) {
+      container.innerHTML = `<div style="color:var(--text-dim);font-size:0.85rem;padding:10px 0;">No saved accounts. Use the form to add your first device node.</div>`;
+    } else {
+      container.innerHTML = nodes.map(n => {
+        const badgeColor = n.status === "ONLINE" ? "var(--emerald)" : "var(--amber)";
+        return `
+          <div class="node-item">
+            <div class="node-head">
+              <span class="node-id">${n.id} · ${n.label}</span>
+              <div style="display:flex;gap:5px;">
+                <button class="btn-outline" onclick="HyperPanel.toggleStatus('${n.id}')">${n.status === "ONLINE" ? "Pause" : "Resume"}</button>
+                <button class="btn-outline" onclick="HyperPanel.deleteNode('${n.id}')">✕</button>
+              </div>
+            </div>
+            <div class="node-details">
+              <div><strong>Handle:</strong> ${n.username}</div>
+              <div><strong>Device:</strong> ${n.device}</div>
+              <div><strong>IP:</strong> ${n.ip}</div>
+              <div style="color:${badgeColor};font-weight:800;margin-top:4px;">● ${n.status}</div>
+            </div>
+            <div class="token-bar">Token: ${n.token}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    const logsBox = document.getElementById("logs-container");
+    logsBox.innerHTML = this.state.logs.map(l => `
+      <div class="log-entry">
+        <span class="log-time">[${l.time}]</span>
+        <span class="log-badge">${l.tag}</span>
+        <span>${l.msg}</span>
+      </div>
+    `).join("");
+  }
+};
+
+HyperPanel.init();
+</script>
+</body>
+</html>
